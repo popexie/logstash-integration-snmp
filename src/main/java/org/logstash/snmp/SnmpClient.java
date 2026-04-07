@@ -239,7 +239,7 @@ public class SnmpClient implements Closeable {
 
     void doTrap(String[] communities, Consumer<SnmpTrapMessage> consumer, CountDownLatch stopCountDownLatch) throws IOException {
         final Set<String> allowedCommunities = Set.of(communities);
-        getSnmp().addCommandResponder(new CommandResponder() {
+        final CommandResponder trapResponder = new CommandResponder() {
             @Override
             public <A extends Address> void processPdu(final CommandResponderEvent<A> event) {
                 logger.debug("SNMP Trap received: {}", event);
@@ -263,7 +263,11 @@ public class SnmpClient implements Closeable {
 
                 consumer.accept(trapMessage);
             }
-        });
+        };
+
+        for (TransportMapping<? extends Address> transportMapping : getSnmp().getMessageDispatcher().getTransportMappings()) {
+            getSnmp().addNotificationListener(transportMapping, transportMapping.getListenAddress(), trapResponder);
+        }
 
         getSnmp().listen();
 

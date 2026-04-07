@@ -48,6 +48,11 @@ public final class SnmpClientBuilder {
         return this;
     }
 
+    public SnmpClientBuilder setLocalEngineId(final byte[] localEngineId) {
+        this.localEngineId = new OctetString(localEngineId);
+        return this;
+    }
+
     public SnmpClientBuilder addUsmUser(
             String securityName,
             String authProtocol,

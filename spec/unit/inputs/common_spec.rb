@@ -138,6 +138,32 @@ shared_examples 'a common SNMP plugin' do
   context '#build_snmp_client!' do
     let(:client_builder) { double('org.logstash.snmp.SnmpClientBuilder') }
 
+    context 'with `local_engine_id` set' do
+      let(:config) { super().merge('local_engine_id' => '0123456789') }
+
+      it 'sets the client local engine id' do
+        expect(client_builder).to receive(:setLocalEngineId).with('0123456789')
+        expect(client_builder).to receive(:setMapOidVariableValues)
+        expect(client_builder).to receive(:build)
+
+        plugin.build_snmp_client!(client_builder)
+      end
+    end
+
+    context 'with `local_engine_id` set as a hexadecimal string' do
+      let(:config) { super().merge('local_engine_id' => '0x80001f88806763084db5aebf6600000000') }
+
+      it 'sets the client local engine id using decoded bytes' do
+        expected_engine_id = ['80001f88806763084db5aebf6600000000'].pack('H*').to_java_bytes
+
+        expect(client_builder).to receive(:setLocalEngineId).with(expected_engine_id)
+        expect(client_builder).to receive(:setMapOidVariableValues)
+        expect(client_builder).to receive(:build)
+
+        plugin.build_snmp_client!(client_builder)
+      end
+    end
+
     context 'with USM user validation' do
       let(:config) { super().merge('security_name' => 'public') }
 
@@ -231,6 +257,85 @@ shared_examples 'a common SNMP plugin' do
             end
           end
         end
+      end
+    end
+  end
+
+  describe 'local_engine_id validation' do
+    let(:local_engine_id) { nil }
+    let(:config) { super().merge('local_engine_id' => local_engine_id) }
+
+    before(:each) do
+      allow(plugin).to receive(:build_client!).and_return(mock_client)
+    end
+
+    context 'with length lower than 5' do
+      let(:local_engine_id) { '1234' }
+
+      it 'should raise' do
+        error_message = '`local_engine_id` length must be greater or equal than 5'
+        expect { plugin.register }.to raise_error(LogStash::ConfigurationError, error_message)
+      end
+    end
+
+    context 'with valid length' do
+      let(:local_engine_id) { '0' * 32 }
+
+      it 'should not raise' do
+        expect { plugin.register }.to_not raise_error
+      end
+    end
+
+    context 'with valid hexadecimal length' do
+      let(:local_engine_id) { '0x80001f88806763084db5aebf6600000000' }
+
+      it 'should not raise' do
+        expect { plugin.register }.to_not raise_error
+      end
+    end
+
+    context 'with invalid hexadecimal content' do
+      let(:local_engine_id) { '0x80001f88806763084db5aebf66000000ZZ' }
+
+      it 'should raise' do
+        error_message = '`local_engine_id` must be a valid hexadecimal string when using the `0x` prefix'
+        expect { plugin.register }.to raise_error(LogStash::ConfigurationError, error_message)
+      end
+    end
+
+    context 'with an odd number of hexadecimal digits' do
+      let(:local_engine_id) { '0x12345' }
+
+      it 'should raise' do
+        error_message = '`local_engine_id` must contain an even number of hexadecimal digits when using the `0x` prefix'
+        expect { plugin.register }.to raise_error(LogStash::ConfigurationError, error_message)
+      end
+    end
+
+    context 'with hexadecimal content shorter than 5 bytes' do
+      let(:local_engine_id) { '0x01020304' }
+
+      it 'should raise' do
+        error_message = '`local_engine_id` length must be greater or equal than 5'
+        expect { plugin.register }.to raise_error(LogStash::ConfigurationError, error_message)
+      end
+    end
+
+    context 'with length greater than 32' do
+      let(:local_engine_id) { '0' * 33 }
+
+      it 'should raise' do
+        error_message = '`local_engine_id` length must be lower or equal than 32'
+        expect { plugin.register }.to raise_error(LogStash::ConfigurationError, error_message)
+      end
+    end
+
+    context 'with hexadecimal content greater than 32 bytes' do
+      let(:local_engine_id) { '0x' + ('ab' * 33) }
+
+      it 'should raise' do
+        error_message = '`local_engine_id` length must be lower or equal than 32'
+        expect { plugin.register }.to raise_error(LogStash::ConfigurationError, error_message)
       end
     end
   end

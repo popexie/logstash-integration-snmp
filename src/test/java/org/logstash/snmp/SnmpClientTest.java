@@ -10,6 +10,7 @@ import org.logstash.snmp.mib.MibManager;
 import org.logstash.snmp.trap.SnmpTrapMessage;
 import org.mockito.ArgumentCaptor;
 import org.mockito.stubbing.Answer;
+import org.snmp4j.CommandResponder;
 import org.snmp4j.CommandResponderEvent;
 import org.snmp4j.CommunityTarget;
 import org.snmp4j.MessageDispatcher;
@@ -867,16 +868,17 @@ class SnmpClientTest {
     }
 
     @Test
-    void trapShouldAddCommandResponderAndListen() throws Exception {
+    void trapShouldAddNotificationListenerAndListen() throws Exception {
         try (final SnmpClient client = spy(createClient())) {
             final Snmp snmp = spy(client.getSnmp());
             when(client.getSnmp()).thenReturn(snmp);
 
             doNothing().when(snmp).listen();
+            doNothing().when(snmp).addNotificationListener(any(TransportMapping.class), any(Address.class), any(CommandResponder.class));
 
             client.doTrap(new String[0], ignore -> {/*Empty*/}, new CountDownLatch(0));
 
-            verify(snmp).addCommandResponder(any());
+            verify(snmp).addNotificationListener(any(TransportMapping.class), any(Address.class), any(CommandResponder.class));
             verify(snmp).listen();
         }
     }
@@ -918,6 +920,7 @@ class SnmpClientTest {
             final Snmp snmp = spy(client.getSnmp());
             when(client.getSnmp()).thenReturn(snmp);
             doNothing().when(snmp).listen();
+            doNothing().when(snmp).addNotificationListener(any(TransportMapping.class), any(Address.class), any(CommandResponder.class));
 
             final boolean[] called = new boolean[1];
             // Start traps client with non-blocking latch
@@ -936,7 +939,7 @@ class SnmpClientTest {
                     .thenReturn(new PDUv1());
 
             // Simulates an incoming trap message
-            snmp.processPdu(responderEvent);
+            captureNotificationListener(snmp).processPdu(responderEvent);
 
             assertEquals(callExpected, called[0]);
 
@@ -1141,6 +1144,7 @@ class SnmpClientTest {
 
             when(client.getSnmp()).thenReturn(snmp);
             doNothing().when(snmp).listen();
+            doNothing().when(snmp).addNotificationListener(any(TransportMapping.class), any(Address.class), any(CommandResponder.class));
 
             final SnmpTrapMessage[] message = new SnmpTrapMessage[1];
             client.doTrap(new String[0], p -> message[0] = p, new CountDownLatch(0));
@@ -1162,7 +1166,7 @@ class SnmpClientTest {
                     .thenReturn(securityLevel);
 
             // Simulates an incoming trap message
-            snmp.processPdu(responderEvent);
+            captureNotificationListener(snmp).processPdu(responderEvent);
 
             final SnmpTrapMessage snmpTrapMessage = message[0];
             assertNotNull(snmpTrapMessage);
@@ -1172,6 +1176,12 @@ class SnmpClientTest {
 
             return snmpTrapMessage;
         }
+    }
+
+    private CommandResponder captureNotificationListener(Snmp snmp) throws IOException {
+        final ArgumentCaptor<CommandResponder> captor = ArgumentCaptor.forClass(CommandResponder.class);
+        verify(snmp).addNotificationListener(any(TransportMapping.class), any(Address.class), captor.capture());
+        return captor.getValue();
     }
 
     @ParameterizedTest

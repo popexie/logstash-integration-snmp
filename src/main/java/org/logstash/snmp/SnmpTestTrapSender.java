@@ -77,7 +77,47 @@ public class SnmpTestTrapSender {
         send(pdu, target);
     }
 
+    public boolean sendInformV2c(String address, String community, Map<String, Object> bindings) {
+        final PDU pdu = new PDU();
+        pdu.setType(PDU.INFORM);
+        addVariableBindings(pdu, bindings);
+
+        final CommunityTarget<Address> target = new CommunityTarget<>(
+                GenericAddress.parse(address),
+                new OctetString(community)
+        );
+
+        target.setVersion(SnmpConstants.version2c);
+        target.setSecurityModel(SecurityModel.SECURITY_MODEL_SNMPv2c);
+        return send(pdu, target);
+    }
+
     public void sendTrapV3(
+            String address,
+            String securityName,
+            String authProtocol,
+            String authPassphrase,
+            String privProtocol,
+            String privPassphrase,
+            String securityLevel,
+            Map<String, Object> bindings) {
+        sendScopedPduV3(PDU.TRAP, address, securityName, authProtocol, authPassphrase, privProtocol, privPassphrase, securityLevel, bindings);
+    }
+
+    public boolean sendInformV3(
+            String address,
+            String securityName,
+            String authProtocol,
+            String authPassphrase,
+            String privProtocol,
+            String privPassphrase,
+            String securityLevel,
+            Map<String, Object> bindings) {
+        return sendScopedPduV3(PDU.INFORM, address, securityName, authProtocol, authPassphrase, privProtocol, privPassphrase, securityLevel, bindings);
+    }
+
+    private boolean sendScopedPduV3(
+            int pduType,
             String address,
             String securityName,
             String authProtocol,
@@ -99,7 +139,7 @@ public class SnmpTestTrapSender {
             snmp.getMessageDispatcher().addMessageProcessingModel(new MPv3(usm));
 
             final ScopedPDU pdu = new ScopedPDU();
-            pdu.setType(PDU.TRAP);
+            pdu.setType(pduType);
             addVariableBindings(pdu, bindings);
 
             final Target<Address> target = new UserTarget<>();
@@ -109,7 +149,7 @@ public class SnmpTestTrapSender {
             target.setVersion(SnmpConstants.version3);
             target.setSecurityModel(SecurityModel.SECURITY_MODEL_USM);
 
-            send(pdu, target);
+            return send(pdu, target);
         } finally {
             cleanupSnmpMessageDispatcherMPv3Model();
         }
@@ -123,12 +163,14 @@ public class SnmpTestTrapSender {
         }
     }
 
-    private void send(PDU pdu, Target<Address> target) {
+    private boolean send(PDU pdu, Target<Address> target) {
         try {
             final ResponseEvent<Address> response = snmp.send(pdu, target);
             if (response != null && response.getError() != null) {
                 throw new RuntimeException(response.getError());
             }
+
+            return response != null && response.getResponse() != null;
         } catch (IOException e) {
             throw new RuntimeException(e);
         }

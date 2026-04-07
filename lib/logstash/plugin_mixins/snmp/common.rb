@@ -4,12 +4,15 @@ module LogStash
       # This module provides common configurations and functions to all SNMP plugins
       #
       module Common
+        HEX_LOCAL_ENGINE_ID_REGEX = /\A0x[0-9A-Fa-f]+\z/.freeze
+
         require 'logstash-integration-snmp_jars'
 
         java_import 'org.logstash.snmp.RubySnmpOidFieldMapper'
         java_import 'org.logstash.snmp.DefaultOidFieldMapper'
         java_import 'org.logstash.snmp.DottedStringOidFieldMapper'
         java_import 'org.logstash.snmp.mib.MibManager'
+        java_import 'org.snmp4j.smi.OctetString'
 
         OID_MAPPING_FORMAT_DEFAULT = 'default'.freeze
         OID_MAPPING_FORMAT_RUBY_SNMP = 'ruby_snmp'.freeze
@@ -69,6 +72,10 @@ module LogStash
           # The target is only relevant while decoding data into a new event.
           base.config :target, :validate => :field_reference
 
+          # The optional SNMPv3 engine's administratively-unique identifier.
+          # Its length must be greater or equal than 5 and less or equal than 32.
+          base.config :local_engine_id, :validate => :string
+
           # SNMPv3 Credentials
           #
           # A single user can be configured and will be used for all defined SNMPv3 requests.
@@ -121,6 +128,7 @@ module LogStash
             client_builder.addUsmUser(@security_name, @auth_protocol, @auth_pass&.value, @priv_protocol, @priv_pass&.value, @security_level || 'noAuthNoPriv')
           end
 
+          set_local_engine_id!(client_builder) unless @local_engine_id.nil?
           client_builder.setMapOidVariableValues(@oid_map_field_values)
           client_builder.build
         end
@@ -149,6 +157,68 @@ module LogStash
           else
             raise(LogStash::ConfigurationError, 'The `oid_root_skip` and `oid_path_length` requires setting `oid_mapping_format` to `default`') if @oid_root_skip.positive? || @oid_path_length.positive?
           end
+        end
+
+        def validate_local_engine_id!
+          return if @local_engine_id.nil?
+
+          if local_engine_id_bytesize < 5
+            raise(LogStash::ConfigurationError, '`local_engine_id` length must be greater or equal than 5')
+          end
+
+          if local_engine_id_bytesize > 32
+            raise(LogStash::ConfigurationError, '`local_engine_id` length must be lower or equal than 32')
+          end
+        end
+
+        def set_local_engine_id!(client_builder)
+          if local_engine_id_hex?
+            local_engine_id_bytes = [@local_engine_id[2..]].pack('H*').to_java_bytes
+
+            if client_builder.respond_to?(:java_send)
+              begin
+                client_builder.java_send(:setLocalEngineId, [Java::byte[]], local_engine_id_bytes)
+              rescue NameError
+                set_local_engine_id_bytes_with_reflection!(client_builder, local_engine_id_bytes)
+              end
+            elsif client_builder.respond_to?(:java_class)
+              set_local_engine_id_bytes_with_reflection!(client_builder, local_engine_id_bytes)
+            else
+              client_builder.setLocalEngineId(local_engine_id_bytes)
+            end
+          else
+            client_builder.setLocalEngineId(@local_engine_id)
+          end
+        end
+
+        def local_engine_id_bytesize
+          if local_engine_id_hex?
+            hex_body = @local_engine_id[2..]
+
+            unless hex_body.length.even?
+              raise(LogStash::ConfigurationError, '`local_engine_id` must contain an even number of hexadecimal digits when using the `0x` prefix')
+            end
+
+            hex_body.length / 2
+          else
+            @local_engine_id.bytesize
+          end
+        end
+
+        def local_engine_id_hex?
+          return false unless @local_engine_id.start_with?('0x')
+
+          unless @local_engine_id.match?(HEX_LOCAL_ENGINE_ID_REGEX)
+            raise(LogStash::ConfigurationError, '`local_engine_id` must be a valid hexadecimal string when using the `0x` prefix')
+          end
+
+          true
+        end
+
+        def set_local_engine_id_bytes_with_reflection!(client_builder, local_engine_id_bytes)
+          local_engine_id_field = client_builder.java_class.declared_fields.find { |field| field.name == 'localEngineId' }
+          local_engine_id_field.setAccessible(true)
+          local_engine_id_field.set(client_builder, OctetString.new(local_engine_id_bytes))
         end
 
         def validate_usm_user!

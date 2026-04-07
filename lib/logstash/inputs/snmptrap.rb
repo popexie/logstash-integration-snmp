@@ -117,6 +117,8 @@ class LogStash::Inputs::Snmptrap < LogStash::Inputs::Base
   private
 
   def validate_config!
+    validate_local_engine_id!
+
     if !@security_name.nil? && !@supported_versions.include?('3')
       raise(LogStash::ConfigurationError, "Using a `security_name` requires `supported_versions` to include version '3': #{@supported_versions}")
     end
