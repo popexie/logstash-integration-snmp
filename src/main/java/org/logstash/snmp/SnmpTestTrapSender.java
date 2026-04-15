@@ -170,7 +170,12 @@ public class SnmpTestTrapSender {
                 throw new RuntimeException(response.getError());
             }
 
-            return response != null && response.getResponse() != null;
+            if (response == null || response.getResponse() == null) {
+                return false;
+            }
+
+            final PDU responsePdu = response.getResponse();
+            return responsePdu.getErrorStatus() == PDU.noError;
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
