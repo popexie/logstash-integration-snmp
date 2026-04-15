@@ -217,6 +217,13 @@ module LogStash
 
         def set_local_engine_id_bytes_with_reflection!(client_builder, local_engine_id_bytes)
           local_engine_id_field = client_builder.java_class.declared_fields.find { |field| field.name == 'localEngineId' }
+
+          unless local_engine_id_field
+            raise(
+              LogStash::ConfigurationError,
+              "Unable to set `local_engine_id`: SNMP client builder #{client_builder.java_class.name} does not expose the expected `localEngineId` field"
+            )
+          end
           local_engine_id_field.setAccessible(true)
           local_engine_id_field.set(client_builder, OctetString.new(local_engine_id_bytes))
         end
